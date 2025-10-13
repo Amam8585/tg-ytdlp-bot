@@ -13,11 +13,13 @@ class Messages(object):
     "<a href=\"https://t.me/shazminQ\">mmd</a>\n"
     "🇮🇹 @downloader_Lumebot\n"
     "</blockquote>\n<b>🌍 Change language: /lang</b>"
+    )
     TO_USE_MSG = (
     "<i>To use this bot you need to subscribe to "
     "<a href=\"https://t.me/LumeTeam\">@LumeTeam</a></i>\n"
     "After you join the channel, <b>resend your video link again "
     "and bot will download it for you</b> ❤️"
+    )
         
     ERROR1 = "Did not found a url link. Please enter a url with <b>https://</b> or <b>http://</b>"
 
