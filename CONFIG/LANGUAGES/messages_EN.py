@@ -8,9 +8,17 @@ class Messages(object):
     #######################################################
     # Messages and errors
     #######################################################
-    CREDITS_MSG = "<blockquote><i>Managed by</i> @iilililiiillliiliililliilliliiil\n🇮🇹 @tgytdlp_it_bot\n🇦🇪 @tgytdlp_uae_bot\n🇬🇧 @tgytdlp_uk_bot\n🇫🇷 @tgytdlp_fr_bot</blockquote>\n<b>🌍 Change language: /lang</b>"
-    TO_USE_MSG = "<i>To use this bot you need to subscribe to @tg_ytdlp Telegram channel.</i>\nAfter you join the channel, <b>resend your video link again and bot will download it for you</b> ❤️"
-
+    CREDITS_MSG = (
+    "<blockquote>🌟 Special thanks to sponsor "
+    "<a href=\"https://t.me/shazminQ\">mmd</a>\n"
+    "🇮🇹 @downloader_Lumebot\n"
+    "</blockquote>\n<b>🌍 Change language: /lang</b>"
+    TO_USE_MSG = (
+    "<i>To use this bot you need to subscribe to "
+    "<a href=\"https://t.me/LumeTeam\">@LumeTeam</a></i>\n"
+    "After you join the channel, <b>resend your video link again "
+    "and bot will download it for you</b> ❤️"
+        
     ERROR1 = "Did not found a url link. Please enter a url with <b>https://</b> or <b>http://</b>"
 
     PLAYLIST_HELP_MSG = """
