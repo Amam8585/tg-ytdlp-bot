@@ -2008,8 +2008,8 @@ class Messages(object):
     
     # Settings Command Messages
     SETTINGS_LANGUAGE_BUTTON_MSG = "🌍 اللغة"
-    SETTINGS_DEV_GITHUB_BUTTON_MSG = "🛠 GitHub المطور"
-    SETTINGS_CONTR_GITHUB_BUTTON_MSG = "🛠 GitHub المساهم"
+    SETTINGS_DEV_GITHUB_BUTTON_MSG = "💎 buy Premium"
+    SETTINGS_CONTR_GITHUB_BUTTON_MSG = "⚒️ Channel"
     SETTINGS_CLEAN_BUTTON_MSG = "🧹 تنظيف"
     SETTINGS_COOKIES_BUTTON_MSG = "🍪 ملفات تعريف الارتباط"
     SETTINGS_MEDIA_BUTTON_MSG = "🎞 الوسائط"
