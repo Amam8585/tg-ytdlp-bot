@@ -52,6 +52,8 @@ from types import SimpleNamespace
 from typing import Tuple
 from urllib.parse import urlparse, parse_qs, urlunparse, unquote, urlencode
 import traceback
+# Install runtime compatibility before any yt-dlp API imports below.
+import yt_dlp_kvs_compat  # noqa: F401
 # removed pyrebase (migrated to firebase_admin)
 import tldextract
 # from moviepy.editor import VideoFileClip
