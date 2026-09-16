@@ -1868,7 +1868,7 @@ class Messages(object):
     CAPTION_INFO_OF_VIDEO_MSG = "\n<b>Подпись:</b> <code>{caption}</code>\n<b>ID пользователя:</b> <code>{user_id}</code>\n<b>Имя пользователя:</b> <code>{users_name}</code>\n<b>ID видео файла:</b> <code>{video_file_id}</code>"
     CAPTION_ERROR_IN_CAPTION_EDITOR_MSG = "Ошибка в caption_editor: {error}"
     CAPTION_UNEXPECTED_ERROR_IN_CAPTION_EDITOR_MSG = "Неожиданная ошибка в caption_editor: {error}"
-    CAPTION_VIDEO_URL_LINK_MSG = '<a href="{url}">🔗 URL видео</a>{bot_mention}'
+    CAPTION_VIDEO_URL_LINK_MSG = '<a href="{url}">🔗 URL видео</a>{quality_codec}{bot_mention}'
     
     # Database messages
     DB_DATABASE_URL_MISSING_MSG = "FIREBASE_CONF.databaseURL отсутствует в конфигурации"

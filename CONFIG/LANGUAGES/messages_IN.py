@@ -1846,7 +1846,7 @@ class Messages(object):
     CAPTION_INFO_OF_VIDEO_MSG = "\n<b>कैप्शन:</b> <code>{caption}</code>\n<b>उपयोगकर्ता ID:</b> <code>{user_id}</code>\n<b>उपयोगकर्ता का पहला नाम:</b> <code>{users_name}</code>\n<b>वीडियो फ़ाइल ID:</b> <code>{video_file_id}</code>"
     CAPTION_ERROR_IN_CAPTION_EDITOR_MSG = "caption_editor में त्रुटि: {error}"
     CAPTION_UNEXPECTED_ERROR_IN_CAPTION_EDITOR_MSG = "caption_editor में अप्रत्याशित त्रुटि: {error}"
-    CAPTION_VIDEO_URL_LINK_MSG = '<a href="{url}">🔗 वीडियो URL</a>{bot_mention}'
+    CAPTION_VIDEO_URL_LINK_MSG = '<a href="{url}">🔗 वीडियो URL</a>{quality_codec}{bot_mention}'
     
     # Database messages
     DB_DATABASE_URL_MISSING_MSG = "कॉन्फ़िगरेशन में FIREBASE_CONF.databaseURL अनुपस्थित है"

@@ -571,6 +571,22 @@ def get_video_info_ffprobe(video_path):
         return 0, 0, 0
 
 
+def get_video_codec_ffprobe(video_path):
+    """Return the actual primary video codec, or an empty string if unavailable."""
+    try:
+        result = subprocess.run([
+            'ffprobe', '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=codec_name',
+            '-of', 'default=noprint_wrappers=1:nokey=1', video_path
+        ], capture_output=True, text=True, encoding='utf-8', errors='replace')
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception as e:
+        logger.error(f'ffprobe codec error: {e}')
+    return ''
+
+
 
 def embed_subs_to_video(video_path, user_id, tg_update_callback=None, app=None, message=None):
     messages = safe_get_messages(user_id)

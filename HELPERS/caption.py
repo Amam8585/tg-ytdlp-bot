@@ -46,7 +46,8 @@ def truncate_caption(
     url: str,
     tags_text: str = '',
     max_length: int = 1000,  # Reduced from 1024 to be safe with encoding issues
-    user_id: int = None
+    user_id: int = None,
+    quality_codec: str = ''
 ) -> Tuple[str, str, str, str, str, bool]:
     """
     Returns: (title_html, pre_block, blockquote_content, tags_block, link_block, was_truncated)
@@ -76,7 +77,13 @@ def truncate_caption(
     # --- Add bot name next to the link ---
     bot_name = getattr(Config, 'BOT_NAME', None) or 'bot'
     bot_mention = f' @{bot_name}' if not bot_name.startswith('@') else f' {bot_name}'
-    link_block = safe_get_messages(user_id).CAPTION_VIDEO_URL_LINK_MSG.format(url=url, bot_mention=bot_mention)
+    # quality_codec is optional: extractors (notably KVS) do not always expose it.
+    # Supplying it unconditionally keeps every translation template safe to format.
+    link_block = messages.CAPTION_VIDEO_URL_LINK_MSG.format(
+        url=url,
+        quality_codec=quality_codec or '',
+        bot_mention=bot_mention,
+    )
     
     was_truncated = False
     
