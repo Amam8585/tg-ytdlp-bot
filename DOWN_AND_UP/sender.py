@@ -7,7 +7,7 @@ from HELPERS.logger import get_log_channel
 from HELPERS.download_status import progress_bar
 from HELPERS.limitter import TimeFormatter
 from HELPERS.caption import truncate_caption
-from DOWN_AND_UP.ffmpeg import get_video_info_ffprobe
+from DOWN_AND_UP.ffmpeg import get_video_codec_ffprobe, get_video_info_ffprobe
 import os
 import subprocess
 import json
@@ -83,6 +83,17 @@ def send_videos(
             logger.error(traceback.format_exc())
             width, height = 0, 0
 
+    # Describe the file that will actually be uploaded rather than relying on
+    # extractor metadata, which is optional and can be absent for KVS videos.
+    quality_codec_parts = []
+    if height:
+        quality_codec_parts.append(f"{height}p")
+    codec = get_video_codec_ffprobe(video_abs_path)
+    if codec:
+        codec_labels = {'h264': 'H.264', 'hevc': 'H.265', 'av1': 'AV1', 'vp9': 'VP9'}
+        quality_codec_parts.append(codec_labels.get(codec.lower(), codec.upper()))
+    quality_codec = f" · {' / '.join(quality_codec_parts)}" if quality_codec_parts else ''
+
     try:
         # Logic simplified: use tags that were already generated in down_and_up.
         # Use original title for caption, but truncated description
@@ -92,7 +103,8 @@ def send_videos(
             url=video_url,
             tags_text=tags_text, # Use final tags for calculation
             max_length=1000,  # Reduced for safety
-            user_id=user_id
+            user_id=user_id,
+            quality_codec=quality_codec,
         )
         # Define spoiler flag for porn-tagged content
         try:

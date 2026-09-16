@@ -1846,7 +1846,7 @@ class Messages(object):
     CAPTION_INFO_OF_VIDEO_MSG = "\n<b>التسمية:</b> <code>{caption}</code>\n<b>معرف المستخدم:</b> <code>{user_id}</code>\n<b>الاسم الأول للمستخدم:</b> <code>{users_name}</code>\n<b>معرف ملف الفيديو:</b> <code>{video_file_id}</code>"
     CAPTION_ERROR_IN_CAPTION_EDITOR_MSG = "خطأ في محرر التسمية: {error}"
     CAPTION_UNEXPECTED_ERROR_IN_CAPTION_EDITOR_MSG = "خطأ غير متوقع في محرر التسمية: {error}"
-    CAPTION_VIDEO_URL_LINK_MSG = '<a href="{url}">🔗 رابط الفيديو</a>{bot_mention}'
+    CAPTION_VIDEO_URL_LINK_MSG = '<a href="{url}">🔗 رابط الفيديو</a>{quality_codec}{bot_mention}'
     
     # Database messages
     DB_DATABASE_URL_MISSING_MSG = "FIREBASE_CONF.databaseURL غير موجود في التكوين"
