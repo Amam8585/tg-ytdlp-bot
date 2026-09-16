@@ -51,7 +51,11 @@ def _find_dynamic_kvs_config(extractor, webpage: str, video_id: str):
             continue
         if not config.get("video_id") or not config.get("license_code"):
             continue
-        if not any(_VIDEO_URL_RE.fullmatch(key) for key in config):
+        if not any(
+                _VIDEO_URL_RE.fullmatch(key)
+                and isinstance(value, str)
+                and "/get_file/" in value
+                for key, value in config.items()):
             continue
         return config
     return None

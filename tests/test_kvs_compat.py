@@ -1,9 +1,11 @@
+from pathlib import Path
+
 import pytest
 from yt_dlp import YoutubeDL
 from yt_dlp.extractor.generic import GenericIE
 from yt_dlp.utils import ExtractorError
 
-import yt_dlp_kvs_compat  # noqa: F401  (ensures patch under all test runners)
+import yt_dlp_kvs_compat
 
 
 URL = "https://example.com/videos/demo/"
@@ -13,6 +15,7 @@ VIDEO_URLS = {
     "video_alt_url2": "https://cdn.example.com/get_file/1/ghi/video_720p.mp4",
     "video_alt_url3": "https://cdn.example.com/get_file/1/jkl/video_1080p.mp4",
 }
+PRODUCTION_FIXTURE = Path(__file__).with_name("fixtures") / "kvs_dynamic_production.html"
 
 
 def _object(extra=""):
@@ -58,6 +61,32 @@ def test_dynamic_kvs_variable_names(name):
     assert all("/get_file/" in item["url"] for item in info["formats"])
 
 
+@pytest.mark.parametrize("name", ["t7591bc940b", "t_changed987xyz"])
+def test_production_shaped_55_key_fixture(name):
+    page = PRODUCTION_FIXTURE.read_text(encoding="utf-8").replace(
+        "var t7591bc940b =", f"var {name} =", 1)
+
+    # Exercise the patched GenericIE method itself, including upstream format
+    # enumeration, resolution parsing, URL transformation, and Referer setup.
+    with YoutubeDL({"quiet": True}) as ydl:
+        config = yt_dlp_kvs_compat._find_dynamic_kvs_config(
+            GenericIE(ydl), page, "production-shaped")
+    assert len(config) == 55
+
+    info = _extract(page)
+
+    assert info["id"] == "7591"
+    assert [(item["format_id"], item["height"]) for item in info["formats"]] == [
+        ("360p", 360),
+        ("480p", 480),
+        ("720p", 720),
+        ("1080p", 1080),
+    ]
+    assert all(item["url"].startswith("https://") for item in info["formats"])
+    assert all("/get_file/" in item["url"] for item in info["formats"])
+    assert all(item["http_headers"] == {"Referer": URL} for item in info["formats"])
+
+
 def test_balanced_object_and_multiple_script_tags():
     page = """<html><head><title>Nested object</title></head><body>
       <script>var unrelated = {video_id: 'wrong', nested: {value: '}'}};</script>
@@ -83,6 +112,14 @@ def test_multiple_objects_selects_only_complete_kvs_config():
         "var first = {video_id: 'wrong', video_url: '/get_file/nope'};"
         "let second = {license_code: 'wrong', video_url: '/get_file/nope'};"
         f"const actual = {_object()};")
+    assert _extract(page)["id"] == "42"
+
+
+def test_complete_looking_non_kvs_object_does_not_mask_real_config():
+    page = _page(
+        "var analytics = {video_id: 'wrong', license_code: 'wrong', "
+        "video_url: 'https://cdn.example.com/not-a-kvs-video.mp4'};"
+        f"var t7591bc940b = {_object()};")
     assert _extract(page)["id"] == "42"
 
 
