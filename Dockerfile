@@ -32,6 +32,10 @@ RUN git clone https://github.com/aliftype/amiri.git /tmp/amiri \
 
 WORKDIR /app
 
+# Makes the repository's sitecustomize hook available to every Python entry
+# point, including the yt-dlp CLI subprocesses launched by the bot.
+ENV PYTHONPATH=/app
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
