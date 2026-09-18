@@ -7,7 +7,6 @@ import os
 
 from HELPERS.app_instance import get_app
 from HELPERS.logger import logger
-from HELPERS.safe_messeger import safe_send_message
 from CONFIG.messages import Messages, safe_get_messages
 
 def app_handler(func):
@@ -57,34 +56,13 @@ def get_main_reply_keyboard(mode="2x3"):
     )
 
 def send_reply_keyboard_always(user_id, mode="2x3"):
-    """Send persistent reply keyboard to user"""
-    global reply_keyboard_msg_ids
-    try:
-        msg_id = reply_keyboard_msg_ids.get(user_id)
-        if msg_id:
-            try:
-                app.edit_message_text(user_id, msg_id, "\u2063", reply_markup=get_main_reply_keyboard(mode))
-                return
-            except Exception as e:
-                # Log only if the error is not MESSAGE_ID_INVALID
-                if 'MESSAGE_ID_INVALID' not in str(e):
-                    logger.warning(f"Failed to edit persistent reply keyboard: {e}")
-                # If it didn't work, we delete the id to avoid getting stuck
-                reply_keyboard_msg_ids.pop(user_id, None)
-        # Always after failure or if there is no id - send a new one
-        msg = safe_send_message(user_id, "\u2063", reply_markup=get_main_reply_keyboard(mode))
-        # If sending failed (e.g., FloodWait), don't try to access msg.id
-        if not msg or not hasattr(msg, "id"):
-            return
-        # If there was another service msg_id (and it is not equal to the new one), we try to delete the old message
-        if msg_id and msg_id != msg.id:
-            try:
-                app.delete_messages(user_id, [msg_id])
-            except Exception as e:
-                logger.warning(f"Failed to delete old reply keyboard message: {e}")
-        reply_keyboard_msg_ids[user_id] = msg.id
-    except Exception as e:
-        logger.warning(f"Failed to send persistent reply keyboard: {e}")
+    """Do not create a standalone invisible message for a reply keyboard.
+
+    Download/status handlers already attach the requested keyboard to their
+    meaningful response. The explicit ``/keyboard`` command remains the place
+    to enable or change it.
+    """
+    return None
 
 # Remove conflicting on_message from decorators.py
 # It should live only in handler_registry.py

@@ -17,6 +17,7 @@ from CONFIG.config import Config
 from CONFIG.messages import Messages, safe_get_messages
 from CONFIG.limits import LimitsConfig
 import time
+import uuid
 
 # Get app instance for decorators
 app = get_app()
@@ -58,8 +59,17 @@ def send_videos(
     text = message.text or ""
     m = re.search(r'https?://[^\s\*]+', text)
     video_url = m.group(0) if m else ""
-    temp_desc_path = os.path.join(os.path.dirname(video_abs_path), "full_description.txt")
     was_truncated = False
+    # Every upload invocation owns distinct temporary names, even when playlist
+    # entries sanitize to the same title inside one job.
+    upload_temp_id = uuid.uuid4().hex
+
+    def _upload_temp_path(suffix: str) -> str:
+        base_dir = os.path.dirname(video_abs_path)
+        base_name = os.path.splitext(os.path.basename(video_abs_path))[0]
+        return os.path.join(base_dir, f"{base_name}.{upload_temp_id}{suffix}")
+
+    temp_desc_path = _upload_temp_path('.full_description.txt')
     
     # Check if user has send_as_file enabled
     user_args = get_user_args(user_id)
@@ -142,7 +152,7 @@ def send_videos(
                     return None
                 base_dir = os.path.dirname(video_path)
                 base_name = os.path.splitext(os.path.basename(video_path))[0]
-                thumb_path = os.path.join(base_dir, base_name + '.__tgthumb.jpg')
+                thumb_path = _upload_temp_path('.__tgthumb.jpg')
                 if os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
                     return thumb_path
                 middle_sec = max(1, int(duration) // 2 if isinstance(duration, int) else 1)
@@ -171,12 +181,12 @@ def send_videos(
                     return None
                 base_dir = os.path.dirname(video_path)
                 base_name = os.path.splitext(os.path.basename(video_path))[0]
-                cover_path = os.path.join(base_dir, base_name + '.__tgcover_paid.jpg')
+                cover_path = _upload_temp_path('.__tgcover_paid.jpg')
                 if os.path.exists(cover_path) and os.path.getsize(cover_path) > 0:
                     return cover_path
                 # 1) Try downloading an external thumbnail (preferred)
                 try:
-                    tmp_dl = os.path.join(base_dir, base_name + '.__ext_thumb.jpg')
+                    tmp_dl = _upload_temp_path('.__ext_thumb.jpg')
                     if video_url:
                         if download_thumbnail(video_url, tmp_dl):
                             if _resize_to_cover(tmp_dl, cover_path):
@@ -196,7 +206,7 @@ def send_videos(
                     pass
                 # 2) Fallback: extract a video frame, then resize to the target size without padding (preserving aspect ratio)
                 try:
-                    tmp_frame = os.path.join(base_dir, base_name + '.__frame.jpg')
+                    tmp_frame = _upload_temp_path('.__frame.jpg')
                     middle_sec = max(1, int(duration) // 2 if isinstance(duration, int) else 1)
                     subprocess.run([
                         'ffmpeg','-y','-ss', str(middle_sec), '-i', video_path,
@@ -239,12 +249,12 @@ def send_videos(
                     return None
                 base_dir = os.path.dirname(video_path)
                 base_name = os.path.splitext(os.path.basename(video_path))[0]
-                cover_path = os.path.join(base_dir, base_name + '.__tgthumb_ext.jpg')
+                cover_path = _upload_temp_path('.__tgthumb_ext.jpg')
                 if os.path.exists(cover_path) and os.path.getsize(cover_path) > 0:
                     return cover_path
                 # 1) Try downloading an external thumbnail (no padding, scale width to 640)
                 try:
-                    tmp_dl = os.path.join(base_dir, base_name + '.__ext_thumb.jpg')
+                    tmp_dl = _upload_temp_path('.__ext_thumb.jpg')
                     if video_url and download_thumbnail(video_url, tmp_dl):
                         if _resize_to_thumb_free(tmp_dl, cover_path):
                             try:

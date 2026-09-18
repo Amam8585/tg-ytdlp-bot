@@ -19,7 +19,8 @@ from CONFIG.messages import Messages, safe_get_messages
 from HELPERS.limitter import TimeFormatter, humanbytes, check_user, check_file_size_limit, check_subs_limits
 from HELPERS.download_status import set_active_download, clear_download_start_time, check_download_timeout, start_hourglass_animation, start_cycle_progress, playlist_errors_lock, playlist_errors
 from HELPERS.safe_messeger import safe_delete_messages, safe_edit_message_text, safe_forward_messages
-from HELPERS.filesystem_hlp import sanitize_filename, sanitize_filename_strict, cleanup_user_temp_files, cleanup_subtitle_files, create_directory, check_disk_space
+from HELPERS.filesystem_hlp import sanitize_filename, sanitize_filename_strict, cleanup_subtitle_files, create_directory, check_disk_space
+from HELPERS.download_jobs import create_download_job, cleanup_download_job
 from DOWN_AND_UP.ffmpeg import get_duration_thumb, get_video_info_ffprobe, embed_subs_to_video, create_default_thumbnail, split_video_2
 from DOWN_AND_UP.sender import send_videos
 from DATABASE.firebase_init import write_logs
@@ -64,10 +65,11 @@ def _handle_quality_key_error(e: Exception, split_msg_ids: list, is_playlist: bo
     # For split videos, check if we have split_msg_ids; for regular videos, check successful_uploads
     logger.info(f"Final check after quality_key error: successful_uploads={successful_uploads}, len(indices_to_download)={len(indices_to_download)}, split_msg_ids={split_msg_ids}, is_playlist={is_playlist}")
     if (successful_uploads == len(indices_to_download)) or (split_msg_ids and not is_playlist):
-        logger.info(f"Upload complete condition met after quality_key error, replacing status message")
-        success_msg = f"<b>{safe_get_messages(user_id).DOWN_UP_UPLOAD_COMPLETE_MSG}</b> - {video_count} {safe_get_messages(user_id).DOWN_UP_FILES_UPLOADED_MSG}.\n{safe_get_messages(user_id).CREDITS_MSG}"
-        safe_edit_message_text(user_id, proc_msg_id, success_msg)
-        send_to_logger(message, success_msg)
+        logger.info("Upload complete after quality_key recovery; removing transient status")
+        # The uploaded media is the success notification. Remove the transient
+        # status instead of turning it into a promotional completion message.
+        if proc_msg_id:
+            safe_delete_messages(chat_id=user_id, message_ids=[proc_msg_id], revoke=True)
         try:
             from COMMANDS.subtitles_cmd import clear_subs_cache_for
             from DOWN_AND_UP.always_ask_menu import delete_subs_langs_cache
@@ -159,6 +161,8 @@ def determine_need_subs(subs_enabled, found_type, user_id):
 def down_and_up(app, message, url, playlist_name, video_count, video_start_with, tags_text, force_no_title=False, format_override=None, quality_key=None, cookies_already_checked=False, use_proxy=False, cached_video_info=None, clear_subs_cache_on_start=True):
     # Reset the checked cookie-source cache for a new download task
     user_id = message.chat.id
+    download_job = None
+    user_dir_name = None
     from COMMANDS.cookies_cmd import reset_checked_cookie_sources
     reset_checked_cookie_sources(user_id)
     logger.info(f"🔄 [DEBUG] Reset checked cookie sources for new download task for user {user_id}")
@@ -612,26 +616,21 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
         if not os.path.exists(user_dir):
             os.makedirs(user_dir, exist_ok=True)
 
-        # Try to get download directory from ask_quality_menu first
-        from DOWN_AND_UP.always_ask_menu import get_user_download_dir, generate_download_dir_name
-        user_dir_name = get_user_download_dir(user_id)
-        
-        # If no download directory from ask_quality_menu, create one
-        if not user_dir_name or not os.path.exists(user_dir_name):
-            try:
-                # Generate download directory name based on URL
-                dir_name = generate_download_dir_name(url)
-                unique_download_dir = os.path.join(user_dir, "downloads", dir_name)
-                os.makedirs(unique_download_dir, exist_ok=True)
-                
-                # Update user_dir_name to use the unique directory
-                user_dir_name = unique_download_dir
-                
-                logger.info(f"Created download directory: {unique_download_dir}")
-            except Exception as e:
-                logger.warning(f"Failed to create download directory, using default: {e}")
-                # Fallback to original behavior
-                user_dir_name = os.path.abspath(os.path.join("users", str(user_id)))
+        # Never reuse URL- or user-scoped directories. Same-user requests may
+        # execute simultaneously and each request owns its entire lifecycle.
+        cached_job_dir = cached_video_info.get('_job_dir') if isinstance(cached_video_info, dict) else None
+        expected_root = os.path.abspath(os.path.join("users", str(user_id), "downloads"))
+        if cached_job_dir and os.path.dirname(os.path.abspath(cached_job_dir)) == expected_root and os.path.isdir(cached_job_dir):
+            user_dir_name = os.path.abspath(cached_job_dir)
+            # A minimal owner object is enough; cleanup still performs strict
+            # parent validation below.
+            download_job = True
+            logger.info("Claimed quality-menu download job user=%s path=%s", user_id, user_dir_name)
+        else:
+            download_job = create_download_job(user_id)
+            user_dir_name = str(download_job.path)
+        from DOWN_AND_UP.always_ask_menu import copy_cookies_to_download_dir
+        copy_cookies_to_download_dir(user_id, user_dir_name)
 
 
         # Pre-cleanup: remove all media files from unique download directory before starting
@@ -2689,9 +2688,7 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
                         if split_msg_ids and not is_playlist:
                             logger.info(f"PREVENTIVE FIX: Processing split video completion after quality_key error in loop: {split_msg_ids}")
                             actual_video_count = len(split_msg_ids)
-                            success_msg = f"<b>{safe_get_messages(user_id).DOWN_UP_UPLOAD_COMPLETE_MSG}</b> - {actual_video_count} {safe_get_messages(user_id).DOWN_UP_FILES_UPLOADED_MSG}.\n{safe_get_messages(user_id).CREDITS_MSG}"
-                            logger.info(f"PREVENTIVE FIX: sending final success message for split video: {success_msg}")
-                            safe_edit_message_text(user_id, proc_msg_id, success_msg)
+                            safe_delete_messages(chat_id=user_id, message_ids=[proc_msg_id], revoke=True) if proc_msg_id else None
                             send_to_logger(message, safe_get_messages(user_id).VIDEO_UPLOAD_COMPLETED_SPLITTING_LOG_MSG)
                             break
                         if is_playlist:
@@ -2756,9 +2753,7 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
                     os.remove(user_vid_path)
                 # Use the actual number of split parts for the success message
                 actual_video_count = len(split_msg_ids) if split_msg_ids else video_count
-                success_msg = f"<b>{safe_get_messages(user_id).DOWN_UP_UPLOAD_COMPLETE_MSG}</b> - {actual_video_count} {safe_get_messages(user_id).DOWN_UP_FILES_UPLOADED_MSG}.\n{safe_get_messages(user_id).CREDITS_MSG}"
-                logger.info(f"down_and_up: sending final success message for split video: {success_msg}")
-                safe_edit_message_text(user_id, proc_msg_id, success_msg)
+                safe_delete_messages(chat_id=user_id, message_ids=[proc_msg_id], revoke=True) if proc_msg_id else None
                 send_to_logger(message, safe_get_messages(user_id).VIDEO_UPLOAD_COMPLETED_SPLITTING_LOG_MSG)
                 
             else:
@@ -3167,9 +3162,7 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
                                 if split_msg_ids and not is_playlist:
                                     logger.info(f"PREVENTIVE FIX: Processing split video completion after quality_key error in manual forward: {split_msg_ids}")
                                     actual_video_count = len(split_msg_ids)
-                                    success_msg = f"<b>{safe_get_messages(user_id).DOWN_UP_UPLOAD_COMPLETE_MSG}</b> - {actual_video_count} {safe_get_messages(user_id).DOWN_UP_FILES_UPLOADED_MSG}.\n{safe_get_messages(user_id).CREDITS_MSG}"
-                                    logger.info(f"PREVENTIVE FIX: sending final success message for split video: {success_msg}")
-                                    safe_edit_message_text(user_id, proc_msg_id, success_msg)
+                                    safe_delete_messages(chat_id=user_id, message_ids=[proc_msg_id], revoke=True) if proc_msg_id else None
                                     send_to_logger(message, safe_get_messages(user_id).VIDEO_UPLOAD_COMPLETED_SPLITTING_LOG_MSG)
                 
                             else:
@@ -3292,9 +3285,7 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
                                     if split_msg_ids and not is_playlist:
                                         logger.info(f"PREVENTIVE FIX: Processing split video completion after quality_key error in manual forward after error: {split_msg_ids}")
                                         actual_video_count = len(split_msg_ids)
-                                        success_msg = f"<b>{safe_get_messages(user_id).DOWN_UP_UPLOAD_COMPLETE_MSG}</b> - {actual_video_count} {safe_get_messages(user_id).DOWN_UP_FILES_UPLOADED_MSG}.\n{safe_get_messages(user_id).CREDITS_MSG}"
-                                        logger.info(f"PREVENTIVE FIX: sending final success message for split video: {success_msg}")
-                                        safe_edit_message_text(user_id, proc_msg_id, success_msg)
+                                        safe_delete_messages(chat_id=user_id, message_ids=[proc_msg_id], revoke=True) if proc_msg_id else None
                                         send_to_logger(message, safe_get_messages(user_id).VIDEO_UPLOAD_COMPLETED_SPLITTING_LOG_MSG)
                 # end-of-task subs cache clearing handled in unified success branches below
                                 else:
@@ -3315,9 +3306,7 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
                         send_error_to_user(message, safe_get_messages(user_id).ERROR_SENDING_VIDEO_MSG.format(error=str(e)))
                         continue
         if successful_uploads == len(indices_to_download):
-            success_msg = f"<b>{safe_get_messages(user_id).DOWN_UP_UPLOAD_COMPLETE_MSG}</b> - {video_count} {safe_get_messages(user_id).DOWN_UP_FILES_UPLOADED_MSG}.\n{safe_get_messages(user_id).CREDITS_MSG}"
-            safe_edit_message_text(user_id, proc_msg_id, success_msg)
-            send_to_logger(message, success_msg)
+            safe_delete_messages(chat_id=user_id, message_ids=[proc_msg_id], revoke=True) if proc_msg_id else None
             try:
                 from COMMANDS.subtitles_cmd import clear_subs_cache_for
                 from DOWN_AND_UP.always_ask_menu import delete_subs_langs_cache
@@ -3327,17 +3316,6 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
             except Exception as _e:
                 logger.debug(f"[SUBS] Failed to clear end cache: {_e}")
             
-            # Clean up download subdirectory after successful upload
-            try:
-                from DOWN_AND_UP.always_ask_menu import get_user_download_dir
-                download_dir = get_user_download_dir(user_id)
-                if download_dir and os.path.exists(download_dir):
-                    logger.info(f"Cleaning up download subdirectory after successful upload: {download_dir}")
-                    import shutil
-                    shutil.rmtree(download_dir)
-                    logger.info(f"Successfully removed download subdirectory: {download_dir}")
-            except Exception as cleanup_error:
-                logger.error(f"Error cleaning up download subdirectory for user {user_id}: {cleanup_error}")
 
         if is_playlist and safe_quality_key:
             total_sent = len(cached_videos) + successful_uploads
@@ -3357,9 +3335,7 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
             if split_msg_ids and not is_playlist:
                 logger.info(f"HARD FIX: Processing split video completion after quality_key error: {split_msg_ids}")
                 actual_video_count = len(split_msg_ids)
-                success_msg = f"<b>{safe_get_messages(user_id).DOWN_UP_UPLOAD_COMPLETE_MSG}</b> - {actual_video_count} {safe_get_messages(user_id).DOWN_UP_FILES_UPLOADED_MSG}.\n{safe_get_messages(user_id).CREDITS_MSG}"
-                logger.info(f"HARD FIX: sending final success message for split video: {success_msg}")
-                safe_edit_message_text(user_id, proc_msg_id, success_msg)
+                safe_delete_messages(chat_id=user_id, message_ids=[proc_msg_id], revoke=True) if proc_msg_id else None
                 send_to_logger(message, safe_get_messages(user_id).VIDEO_UPLOAD_COMPLETED_SPLITTING_LOG_MSG)
                 try:
                     from COMMANDS.subtitles_cmd import clear_subs_cache_for
@@ -3385,11 +3361,7 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
         except Exception:
             pass
         
-        # Clean up temporary files on error
-        try:
-            cleanup_user_temp_files(user_id)
-        except Exception as cleanup_error:
-            logger.error(f"Error cleaning up temp files after error for user {user_id}: {cleanup_error}")
+        # Per-job cleanup is performed in finally.
     finally:
         set_active_download(user_id, False)
         clear_download_start_time(user_id)  # Clear the download start time
@@ -3399,11 +3371,13 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
                 if error_key in playlist_errors:
                     del playlist_errors[error_key]
 
-        # Clean up temporary files
-        try:
-            cleanup_user_temp_files(user_id)
-        except Exception as e:
-            logger.error(f"Error cleaning up temp files for user {user_id}: {e}")
+        # Cleanup is scoped to this request. A concurrent request for the same
+        # user can never have its media or thumbnail removed here.
+        if download_job is not None:
+            try:
+                cleanup_download_job(user_dir_name, user_id)
+            except Exception as e:
+                logger.error(f"Error cleaning download job for user {user_id}: {e}")
 
         try:
             if status_msg_id:
