@@ -23,6 +23,8 @@ from HELPERS.safe_messeger import safe_send_message, safe_delete_messages
 from CONFIG.logger_msg import LoggerMsg
 from HELPERS.filesystem_hlp import create_directory
 from HELPERS.qualifier import get_quality_by_min_side, get_real_height_for_quality
+from HELPERS.quality_formats import format_quality
+from HELPERS.download_jobs import create_download_job
 from HELPERS.limitter import check_subs_limits, check_playlist_range_limits, TimeFormatter
 
 from CONFIG.config import Config
@@ -335,12 +337,18 @@ def get_filters(user_id):
         _ASK_FILTERS[str(user_id)] = f
     return f
 
-def set_user_download_dir(user_id, download_dir):
+def set_user_download_dir(user_id, download_dir, url=None):
     """Set download directory for user session"""
     _USER_DOWNLOAD_DIRS[str(user_id)] = download_dir
+    if url:
+        _USER_DOWNLOAD_DIRS[(str(user_id), url)] = download_dir
 
-def get_user_download_dir(user_id):
+def get_user_download_dir(user_id, url=None):
     """Get download directory for user session"""
+    if url:
+        matched = _USER_DOWNLOAD_DIRS.get((str(user_id), url))
+        if matched:
+            return matched
     return _USER_DOWNLOAD_DIRS.get(str(user_id))
 
 def set_user_proc_msg(user_id, proc_msg):
@@ -3641,19 +3649,19 @@ def ask_quality_menu(app, message, url, tags, playlist_start_index=1, cb=None, d
     # Defensive init to avoid UnboundLocalError in rare branches
     action_buttons = []
     
+    # Callback updates must retain the workspace belonging to this URL rather
+    # than whichever same-user request happened to run most recently.
+    if download_dir is None and cb is not None:
+        download_dir = get_user_download_dir(user_id, url)
+
     # Create download directory if not provided
     if download_dir is None:
         try:
-            user_dir = os.path.join("users", str(user_id))
-            os.makedirs(user_dir, exist_ok=True)
-            
-            # Generate download directory name based on URL
-            dir_name = generate_download_dir_name(url)
-            download_dir = os.path.join(user_dir, "downloads", dir_name)
-            os.makedirs(download_dir, exist_ok=True)
+            job = create_download_job(user_id)
+            download_dir = str(job.path)
             logger.info(f"Created download directory for ask_quality_menu: {download_dir}")
             # Store download directory for this user session
-            set_user_download_dir(user_id, download_dir)
+            set_user_download_dir(user_id, download_dir, url)
             # Copy cookies to download directory
             copy_cookies_to_download_dir(user_id, download_dir)
         except Exception as e:
@@ -3939,6 +3947,11 @@ def ask_quality_menu(app, message, url, tags, playlist_start_index=1, cb=None, d
                 save_ask_info(user_id, url, info)
             except Exception:
                 pass
+        # Carry workspace ownership through the quality callback without
+        # relying on mutable per-user "current directory" state.
+        if download_dir:
+            info['_job_dir'] = os.path.abspath(download_dir)
+            save_ask_info(user_id, url, info, download_dir=download_dir)
         title = info.get('title', 'Video')
         video_id = info.get('id')
         tags_text = generate_final_tags(url, tags, info)
@@ -3952,7 +3965,7 @@ def ask_quality_menu(app, message, url, tags, playlist_start_index=1, cb=None, d
         is_private_chat = getattr(message.chat, "type", None) == enums.ChatType.PRIVATE
         thumb_path = None
         # Use download directory if available, otherwise fallback to user directory
-        download_dir = get_user_download_dir(user_id)
+        download_dir = get_user_download_dir(user_id, url) or download_dir
         if download_dir and os.path.exists(download_dir):
             thumb_dir = download_dir
         else:
@@ -4191,6 +4204,15 @@ def ask_quality_menu(app, message, url, tags, playlist_start_index=1, cb=None, d
                     filesize = f.get('filesize') or f.get('filesize_approx')
                     if quality_key not in quality_map or (filesize and filesize > (quality_map[quality_key].get('filesize') or 0)):
                         quality_map[quality_key] = f
+            # A selected codec must not impose an artificial resolution cap.
+            # In particular, many 4K sources offer 2160p only as VP9/AV1
+            # video-only streams. Keep the user's preferred codec where it is
+            # available, but expose every real source quality and let yt-dlp's
+            # merge-capable callback selector fall back to that stream.
+            for f in info.get('formats', []):
+                quality_key = format_quality(f)
+                if quality_key and quality_key not in quality_map:
+                    quality_map[quality_key] = f
             table_lines = []
             for q in sorted(quality_map.keys(), key=sort_quality_key):
                 f = quality_map[q]
@@ -4318,6 +4340,9 @@ def ask_quality_menu(app, message, url, tags, playlist_start_index=1, cb=None, d
 
             def infer_quality_key(f):
                 messages = safe_get_messages(message.chat.id)
+                normalized = format_quality(f)
+                if normalized:
+                    return normalized
                 w = f.get('width')
                 h = f.get('height')
                 if w and h:
